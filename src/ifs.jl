@@ -17,18 +17,31 @@ module Jifs
         ImageData(w, h) = new(h, w, zeros(w, h, 3))
     end
 
-    function imgcolor(img::ImageData, pos::Vector{Int64})
-        x = pos[1] + 1
-        y = img.h - pos[2]
+    struct QuadPlot
+        rngpos
+        transform
+    end
 
-        img.data[x, y, :]
+    function _Quad0_t(pos, w, h)
+        axs = [w/2, h/2]
+        axs + (pos .* axs)
+    end
+
+    const Quad1 = QuadPlot(Uniform(0, 1), (pos, w, h) -> pos .* [w, h])
+    const Quad0 = QuadPlot(Uniform(-1, 1), _Quad0_t)
+
+    function imgcolor(img::ImageData, pos::Vector{Int64})
+        i = img.h - pos[2]
+        j = pos[1] + 1
+
+        img.data[i, j, :]
     end
 
     function imgcolor!(img::ImageData, pos::Vector{Int64}, rgb::Vector{Float64})
-        x = pos[1] + 1
-        y = img.h - pos[2]
+        i = img.h - pos[2]
+        j = pos[1] + 1
 
-        img.data[x, y, :] = rgb
+        img.data[i, j, :] = rgb
     end
 
     function addcolor!(img::ImageData, pos::Vector{Int64}, rgb::Vector{Float64})
@@ -39,8 +52,8 @@ module Jifs
     function scalefactor709(img::ImageData, iters::Int64)::Float64
         logsum = 0.0
 
-        for x ∈ 1:img.w, y ∈ 1:img.h
-            lum = sum(img.data[x, y, :] .* LUMINANCE_BT709) / iters
+        for i ∈ 1:img.h, j ∈ 1:img.w
+            lum = sum(img.data[i, j, :] .* LUMINANCE_BT709) / iters
             logsum += log10(max.(LUM_EPS, lum))
         end
 
@@ -137,21 +150,22 @@ module Jifs
         x < 0 || x >= w || y < 0 || y >= h
     end
 
-    function painting!(ifs, iters, npoints)
+    function painting!(ifs, iters, npoints; quad::QuadPlot=Quad1)
         for _ in 1:npoints
-            ifs.pos = rand(Uniform(0, 1), 2) # first quadrant
+            ifs.pos = rand(quad.rngpos, 2) # first quadrant
             rgb = [0., 0., 0.] # starting color
             w, h = ifs.img.w, ifs.img.h
 
             for _ in 1:iters
-                next!(ifs)
+                pos = next!(ifs)
                 mapcolor = ifs.maps[ifs.lasti].color
                 rgb = nextcolor(rgb, mapcolor)
 
                 # not required when ifs.pos since our initial pos
                 # pos = (ifs.pos .+ 1) / 2
                 # pos = pos .* [w-1, h-1]
-                pos = ifs.pos .* [w, h]
+                # Quad1: pos = pos .* [w, h]
+                pos = quad.transform(pos, w, h)
                 pos = floor.(Int64, pos)
                 # fitpos!(pos, w, h)
                 #
@@ -165,8 +179,8 @@ module Jifs
     function rgbimgarray(img::ImageData)
         w, h = img.w, img.h
 
-        function rgbhelper(x, y)
-            r, g, b = imgcolor(img, [x-1, y-1])
+        function rgbhelper(i, j)
+            r, g, b = img.data[i, j, :]
             RGB(r, g, b)
         end
 
@@ -178,7 +192,9 @@ module Jifs
         rgbimgarray(ifs.img)
     end
 
-    # Example
+    ############################################################
+    # Examples
+    ############################################################
     function sierpinski(w, h)::IFS
         maps = [gen_affine_map([0.5 0; 0 0.5], [0., 0.], color=[0.8, 0.2, 0.2]),
                 gen_affine_map([0.5 0; 0 0.5], [1., 0.], color=[0.2, 0.8, 0.2]),
@@ -194,10 +210,10 @@ module Jifs
 
     # Example
     function fern(w, h)::IFS
-        maps = [gen_affine_map([ 0.00  0.00;  0.00 0.16], [0.00, 0.00]),
-                gen_affine_map([ 0.85  0.04; -0.04 0.85], [0.00, 1.60]),
-                gen_affine_map([ 0.20 -0.26;  0.23 0.22], [0.00, 1.60]),
-                gen_affine_map([-0.15  0.28;  0.26 0.24], [0.00, 0.44])]
+        maps = [gen_affine_map([ 0.00  0.00;  0.00 0.16], [0.00, 0.00], color=[rand(), 0.9, rand()]),
+                gen_affine_map([ 0.85  0.04; -0.04 0.85], [0.00, 1.60], color=[rand(), 0.9, rand()]),
+                gen_affine_map([ 0.20 -0.26;  0.23 0.22], [0.00, 1.60], color=[rand(), 0.9, rand()]),
+                gen_affine_map([-0.15  0.28;  0.26 0.24], [0.00, 0.44], color=[rand(), 0.9, rand()])]
         μ = [1, 1, 1, 1] ./ 4
         IFS(
             ImageData(w, h),
@@ -206,21 +222,23 @@ module Jifs
         )
     end
 
-    # Example
-    function sierpinski_pentagon()::IFS
-        maps = [gen_affine_map([0.382 0.0; 0.0 0.382], [0., 0.]),
-                gen_affine_map([0.382 0.0; 0.0 0.382], [0, 0.618]),
-                gen_affine_map([0.382 0.0; 0.0 0.382], [0.809, 0.588]),
-                gen_affine_map([0.382 0.0; 0.0 0.382], [0.309, 0.951]),
-                gen_affine_map([0.382 0.0; 0.0 0.382], [-0.191, 0.588])]
+    function misc_ex1(w, h)::IFS
+        t = 1/3
+        maps = [
+            gen_affine_map([t 0; 0 t], [0, 0], color=[1, 0.1, 0.1])
+            gen_affine_map([t 0; 0 t], [1, 1], color=[0.1, 1, 0.1])
+            gen_affine_map([t 0; 0 t], [-1, 1], color=[0.1, 0.1, 1])
+        ]
 
-        μ = [1, 1, 1, 1, 1] ./ 5
+        μ = ones(3) .* t
+
         IFS(
-            ImageData(512, 512),
+            ImageData(w, h),
             maps,
             μ
         )
     end
+    ############################################################
 
     function test_ifs!(ifs, fname; npoints=1000, iters=10000)
         painting!(ifs, iters, npoints)
@@ -241,9 +259,16 @@ module Jifs
         test_ifs!(ifs, "fern.png")
     end
 
-    function test_pentagon()
-        ifs = sierpinski_pentagon()
-        test_ifs!(ifs, "pentagon.png")
+    function test_axis()
+        halfmap = Jifs.IFSMap(x -> x ./ 2, color=[1., 0., 0.])
+        img = Jifs.ImageData(50, 50)
+        ifs = Jifs.IFS(img, [halfmap], [1])
+        test_ifs!(ifs, "axis.png")
+    end
+
+    function test_misc1()
+        ifs = misc_ex1(512, 512)
+        test_ifs!(ifs, "misc1.png")
     end
 end
 
