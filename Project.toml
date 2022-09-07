@@ -1,4 +1,4 @@
-name = "jlifs"
+name = "jifs.jl"
 uuid = "70700395-f203-487d-863c-a1e1c456a111"
 authors = ["Jader Brasil <jaderebrasil@gmail.com>"]
 version = "0.1.0"
