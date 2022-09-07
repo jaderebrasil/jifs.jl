@@ -1,5 +1,5 @@
 module Jifs
-using Distributions, Images, FileIO
+using Distributions, Images
 
 const LUMINANCE_BT709 = [0.2126, 0.7152, 0.0722]
 const LUM_EPS = 10^-4
@@ -14,21 +14,34 @@ mutable struct ImageData
     w::Int64
     h::Int64
     data::Array{Float64,3}
-    ImageData(w, h) = new(h, w, zeros(w, h, 3))
+    ImageData(w, h) = new(w, h, zeros(h, w, 3))
 end
 
 struct QuadPlot
-    rngpos::Any
-    transform::Any
+    transform
+    rngpos::Tuple{Uniform, Uniform}
+
+    function QuadPlot(transform, rngpos::Tuple{Uniform, Uniform})
+        new(transform, rngpos)
+    end
 end
 
-function _Quad0_t(pos, w, h)
-    axs = [w / 2, h / 2]
-    axs + (pos .* axs)
+function uniform_quad(quad::QuadPlot)
+    [rand(quad.rngpos[1]), rand(quad.rngpos[2])]
 end
 
-const Quad1 = QuadPlot(Uniform(0, 1), (pos, w, h) -> pos .* [w, h])
-const Quad0 = QuadPlot(Uniform(-1, 1), _Quad0_t)
+const Quad0 = QuadPlot(
+    (pos, w, h) -> [w/2,h/2] + (pos .* [w/2,h/2]),
+    (Uniform(-1, 1), Uniform(-1, 1))
+)
+const Quad1 = QuadPlot(
+    (pos, w, h) -> pos .* [w, h],
+    (Uniform(0, 1), Uniform(0, 1))
+)
+const Quad12 = QuadPlot(
+    (pos, w, h) -> [w/2, 0] + pos .* [w/2, h],
+    (Uniform(-1, 1), Uniform(0, 1))
+)
 
 function imgcolor(img::ImageData, pos::Vector{Int64})
     i = img.h - pos[2]
@@ -157,7 +170,7 @@ end
 
 function painting!(ifs, iters, npoints; quad::QuadPlot = Quad1)
     for _ = 1:npoints
-        ifs.pos = rand(quad.rngpos, 2) # first quadrant
+        ifs.pos = uniform_quad(quad) # first quadrant
         rgb = [0.0, 0.0, 0.0] # starting color
         w, h = ifs.img.w, ifs.img.h
 
@@ -210,7 +223,7 @@ function sierpinski(w, h)::IFS
 end
 
 # Example
-function fern(w, h)::IFS
+function barnsley_fern(w, h)::IFS
     maps = [
         gen_affine_map([0.00 0.00; 0.00 0.16], [0.00, 0.00], color = [rand(), 0.9, rand()]),
         gen_affine_map(
@@ -229,7 +242,7 @@ function fern(w, h)::IFS
             color = [rand(), 0.9, rand()],
         ),
     ]
-    μ = [1, 1, 1, 1] ./ 4
+    μ = [0.01, 0.85, 0.07, 0.07]
     IFS(ImageData(w, h), maps, μ)
 end
 
@@ -277,15 +290,32 @@ function test_sierpinski()
 end
 
 function test_fern()
-    ifs = fern(512, 512)
-    test_ifs!(ifs, "fern.png")
+    ifs = barnsley_fern(1024, 512)
+    test_ifs!(ifs, "fern.png", quad = Quad12)
 end
 
 function test_axis()
     halfmap = Jifs.IFSMap(x -> x ./ 2, color = [1.0, 0.0, 0.0])
     img = Jifs.ImageData(50, 50)
     ifs = Jifs.IFS(img, [halfmap], [1])
-    test_ifs!(ifs, "axis.png")
+    test_ifs!(ifs, "axisQ0.png",
+              npoints=100,
+              iters=1000,
+              quad=Quad0)
+
+    img = Jifs.ImageData(50, 50)
+    ifs = Jifs.IFS(img, [halfmap], [1])
+    test_ifs!(ifs, "axisQ1.png",
+              npoints=100,
+              iters=1000,
+              quad=Quad1)
+
+    img = Jifs.ImageData(50, 50)
+    ifs = Jifs.IFS(img, [halfmap], [1])
+    test_ifs!(ifs, "axisQ12.png",
+              npoints=100,
+              iters=1000,
+              quad=Quad12)
 end
 
 function test_misc1()
