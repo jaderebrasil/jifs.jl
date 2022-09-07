@@ -42,17 +42,19 @@ function imgcolor!(img::ImageData, pos::Vector{Int64}, rgb::Vector{Float64})
     j = pos[1] + 1
 
     img.data[i, j, :] = rgb
+    nothing
 end
 
 function addcolor!(img::ImageData, pos::Vector{Int64}, rgb::Vector{Float64})
     prev = imgcolor(img, pos)
     imgcolor!(img, pos, rgb .+ prev)
+    nothing
 end
 
 function scalefactor709(img::ImageData, iters::Int64)::Float64
     logsum = 0.0
 
-    for i ∈ 1:(img.h), j ∈ 1:(img.w)
+    for j ∈ 1:(img.w), i ∈ 1:(img.h)
         lum = sum(img.data[i, j, :] .* LUMINANCE_BT709) / iters
         logsum += log10(max.(LUM_EPS, lum))
     end
@@ -66,6 +68,7 @@ function gammapixels!(img::ImageData, iters::Int64, scalefunc = scalefactor709)
     gamma = max.((img.data .* sf) ./ (iters / 255), 0.0) .^ GAMMA_ENCODING
     pixels = min.(1, max.(0, gamma))
     img.data = pixels
+    nothing
 end
 
 struct IFSMap
@@ -107,25 +110,6 @@ function gen_moebius_map(coefs::Vector; color = rand(3))::IFSMap
     IFSMap(moebius, color = color)
 end
 
-function apply_rand_map(vec::Vector{Float64}, maps::Vector{IFSMap}, μ::Vector{Float64} = [])
-    n = length(maps)
-    if n != length(μ)
-        μ = rand(n)
-    end
-    μ = μ ./ sum(μ)
-
-    θ = rand()
-    s = 0.0
-    i = 0
-    while θ > s
-        i += 1
-        s += μ[i]
-    end
-
-    vec = maps[i].apply(vec)
-    vec, μ, i
-end
-
 mutable struct IFS
     img::ImageData
     maps::Vector{IFSMap}
@@ -135,18 +119,35 @@ mutable struct IFS
     IFS(img, maps, μ = []) = new(img, maps, μ, [0.0, 0.0], -1)
 end
 
-function next!(ifs::IFS)::Vector{Float64}
-    ifs.pos, ifs.μ, ifs.lasti = apply_rand_map(ifs.pos, ifs.maps, ifs.μ)
-    ifs.pos
+function next!(ifs::IFS)
+    n = length(ifs.maps)
+    if n != length(ifs.μ)
+        ifs.μ = rand(n)
+    end
+    sμ = sum(ifs.μ)
+    sμ ≈ 1 || (ifs.μ = ifs.μ ./ sμ)
+
+    θ = rand()
+    s = 0.0
+    i = 0
+    while θ > s
+        i += 1
+        s += ifs.μ[i]
+    end
+
+    ifs.pos = ifs.maps[i].apply(ifs.pos)
+    ifs.lasti = i
+    nothing
 end
 
 function nextcolor(rgb::Vector{Float64}, mapcolor::Vector)::Vector{Float64}
-    (rgb + mapcolor) ./ 2
+    rgb = (rgb + mapcolor) ./ 2
 end
 
 function fitpos!(pos::Vector{Int64}, w, h)
     pos[1] = pos[1] < 0 ? 0 : (pos[1] >= w ? w - 1 : pos[1])
     pos[2] = pos[2] < 0 ? 0 : (pos[2] >= h ? h - 1 : pos[2])
+    nothing
 end
 
 function cutpos(pos::Vector{Int64}, w, h)
@@ -161,23 +162,21 @@ function painting!(ifs, iters, npoints; quad::QuadPlot = Quad1)
         w, h = ifs.img.w, ifs.img.h
 
         for _ = 1:iters
-            pos = next!(ifs)
+            next!(ifs)
             mapcolor = ifs.maps[ifs.lasti].color
             rgb = nextcolor(rgb, mapcolor)
 
-            # not required when ifs.pos since our initial pos
-            # pos = (ifs.pos .+ 1) / 2
-            # pos = pos .* [w-1, h-1]
-            # Quad1: pos = pos .* [w, h]
+            pos = ifs.pos
             pos = quad.transform(pos, w, h)
             pos = floor.(Int64, pos)
-            # fitpos!(pos, w, h)
-            #
+
             if !cutpos(pos, w, h)
                 addcolor!(ifs.img, pos, rgb)
             end
         end
     end
+
+    nothing
 end
 
 function rgbimgarray(img::ImageData)
@@ -269,6 +268,7 @@ function test_ifs!(ifs, fname; npoints = 1000, iters = 10000, quad = Quad1)
     println("gamma correction applied")
     save(fname, img)
     println("saved as $fname")
+    nothing
 end
 
 function test_sierpinski()
