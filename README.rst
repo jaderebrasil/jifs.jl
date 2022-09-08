@@ -1,4 +1,4 @@
 JIFS.jl
 =======
 
-- `IFSm <notebook/IFSm.ipynb>`_
+- `IFSm <notebooks/IFSm.ipynb>`_
