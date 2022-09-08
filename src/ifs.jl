@@ -153,6 +153,39 @@ function next!(ifs::IFS)
     nothing
 end
 
+mutable struct IFSm
+    img::ImageData
+    maps::Vector{IFSMap}
+    μ::Function
+    pos::Vector{Float64}
+    lasti::Int64
+    IFSm(img, maps, μ) = new(img, maps, μ, [0.0, 0.0], -1)
+end
+
+function next!(ifs::IFSm)
+    n = length(ifs.maps)
+    μₓ = ifs.μ(ifs.pos)
+
+    if length(μₓ) != n
+        error("μ not seems compatible with maps, ($n != $(length(μₓ)))")
+    end
+
+    sμ = sum(μₓ)
+    sμ ≈ 1 || (μₓ = μₓ ./ sμ)
+
+    θ = rand()
+    s = 0.0
+    i = 0
+    while θ > s
+        i += 1
+        s += μₓ[i]
+    end
+
+    ifs.pos = ifs.maps[i].apply(ifs.pos)
+    ifs.lasti = i
+    nothing
+end
+
 function nextcolor(rgb::Vector{Float64}, mapcolor::Vector)::Vector{Float64}
     rgb = (rgb + mapcolor) ./ 2
 end
