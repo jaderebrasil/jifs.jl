@@ -203,7 +203,7 @@ function rgbimgarray(img::ImageData)
     [rgbhelper(i, j) for i = 1:h, j = 1:w]
 end
 
-function showifs(ifs, iters)
+function showifs!(ifs, iters)
     gammapixels!(ifs.img, iters)
     rgbimgarray(ifs.img)
 end
@@ -277,7 +277,7 @@ end
 function test_ifs!(ifs, fname; npoints = 1000, iters = 10000, quad = Quad1)
     painting!(ifs, iters, npoints, quad = quad)
     println("painted")
-    img = showifs(ifs, iters)
+    img = showifs!(ifs, iters)
     println("gamma correction applied")
     save(fname, img)
     println("saved as $fname")
